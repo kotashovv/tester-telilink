@@ -16,7 +16,7 @@ try {
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $method = $_SERVER['REQUEST_METHOD'];
     $app = new App();
-    if ($method === 'GET' && $path === '/') {
+    if ($method === 'GET' && in_array($path, ['/', '/gui-test'], true)) {
         header('Content-Type: text/html; charset=utf-8');
         readfile(__DIR__ . '/ui.html');
         exit;
