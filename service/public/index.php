@@ -9,7 +9,9 @@ try {
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $method = $_SERVER['REQUEST_METHOD'];
     $app = new App();
-    if ($method === 'GET' && $path === '/health') {
+    if ($method === 'GET' && $path === '/') {
+        $result = ['name' => 'Daily Pass service', 'try' => ['POST /subscriptions', 'POST /jobs/bill', 'GET /subscribers/status?subscriberId=tel%3A1000000001', 'GET /health']];
+    } elseif ($method === 'GET' && $path === '/health') {
         $app->store->query('SELECT 1');
         $result = ['ok' => true];
     } elseif ($method === 'GET' && $path === '/subscribers/status') {

@@ -36,7 +36,9 @@ function callback(string $path, array $data): array {
 try {
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $method = $_SERVER['REQUEST_METHOD'];
-    if ($method === 'GET' && $path === '/health') {
+    if ($method === 'GET' && $path === '/') {
+        $result = ['name' => 'Carrier Platform mock', 'try' => ['GET /admin/state', 'POST /admin/config', 'POST /admin/notify', 'POST /admin/mo', 'GET /health']];
+    } elseif ($method === 'GET' && $path === '/health') {
         $result = ['ok' => true];
     } elseif ($method === 'GET' && $path === '/admin/state') {
         $result = [];
