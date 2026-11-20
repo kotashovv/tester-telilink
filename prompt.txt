@@ -1,0 +1,140 @@
+# Additional Engineering Instructions — Daily Pass
+
+You are acting as a **Senior PHP Backend Engineer and Payment Systems Architect**.
+
+Your task is to implement the attached Carrier-Billing Daily Subscription assignment as a **production-minded, minimal, fully runnable solution**.
+
+The original assignment is the source of truth. These additional instructions are intended to improve implementation quality, correctness, and testability. Do not silently change or omit any original requirement.
+
+## 1. Primary objective
+
+Build a solution that would score as highly as possible against the provided evaluation rubric.
+
+Prioritize in this order:
+
+1. Financial correctness and prevention of double charging.
+2. Reliable opt-in, charging, notification, and opt-out flows.
+3. Correct concurrency handling and recovery from failures.
+4. Automated testing of money-critical behavior.
+5. One-command Docker reproducibility.
+6. Readable, maintainable PHP code.
+7. Clear documentation and architectural decisions.
+
+**A small, provably correct implementation is better than a complex implementation with uncertain payment behavior.**
+
+## 2. Technology stack
+
+Prefer:
+
+- PHP 8.3
+- Yii2, if it can be integrated without unnecessary complexity
+- MySQL 8
+- PHPUnit
+- Docker and Docker Compose
+- Composer
+
+Avoid unnecessary infrastructure, including Redis, RabbitMQ, Kafka, MongoDB, and frontend frameworks, unless their inclusion solves a concrete requirement.
+
+Use strict typing, meaningful interfaces, dependency injection, and separation of responsibilities.
+
+Avoid unnecessary abstractions and overengineering.
+
+## 3. Architecture requirements
+
+Separate the following responsibilities:
+
+- Subscription lifecycle management
+- Carrier Platform HTTP integration
+- Daily billing orchestration
+- Payment attempt persistence
+- Idempotency and concurrency protection
+- SMS sending
+- Webhook processing
+- Retry scheduling and classification
+
+Use database migrations for schema creation.
+
+Use explicit subscription states and documented state transitions.
+
+Ensure that a masked subscriber identifier is treated as an opaque identifier, not parsed as a telephone number.
+
+Distinguish a subscriber's canonical identity from their usable SMS destination when necessary.
+
+## 4. Financial correctness — CRITICAL
+
+Design a robust payment state machine.
+
+Each logical daily charge must have a deterministic, stable `externalTrxId`.
+
+The identifier must be:
+
+- Unique across distinct logical charges.
+- Stable across retries of the same logical charge.
+- Compatible with the Platform API.
+- Persisted before the external charge is attempted.
+
+Use database-level uniqueness constraints to enforce one logical charge per subscriber per billing day.
+
+Define the billing timezone explicitly.
+
+Handle concurrent billing workers safely.
+
+A duplicate job execution must never create a second logical charge for the same subscriber and day.
+
+Do not rely solely on application-level existence checks.
+
+Implement explicit payment states such as:
+
+- PENDING
+- PROCESSING
+- SUCCEEDED
+- RETRY_SCHEDULED
+- FAILED_PERMANENT
+- UNKNOWN
+
+Use the smallest state machine that correctly covers the requirements.
+
+### Ambiguous payment outcomes
+
+Explicitly handle the scenario where:
+
+1. The Platform successfully charges the subscriber.
+2. The HTTP response is lost.
+3. The service cannot determine whether the charge succeeded.
+
+Never generate a new `externalTrxId` for a retry of that charge.
+
+Do not interpret `E1337` as proof of successful payment.
+
+If the Platform contract cannot resolve an ambiguous outcome, preserve it as UNKNOWN, prevent a second logical charge, and document the reconciliation limitation.
+
+Do not send a successful payment receipt unless success and its reference are confirmed.
+
+### Crash recovery
+
+Consider process termination:
+
+- Before the external API call.
+- During the external API call.
+- After successful charging but before saving the response.
+- After saving the payment but before sending the receipt.
+
+Explain how the implementation handles or safely limits each case.
+
+Do not claim exactly-once execution when the available API contract cannot guarantee it.
+
+## 5. Opt-out and charging concurrency
+
+This is a critical requirement.
+
+Consider this race:
+
+1. A billing worker selects an ACTIVE subscriber.
+2. The subscriber sends STOP.
+3. The worker attempts to charge the subscriber.
+
+Design and implement a defensible concurrency strategy.
+
+Use transactions, appropriate row-level locking, and explicit state transitions where necessary.
+
+Do not assume that checking ACTIVE once is

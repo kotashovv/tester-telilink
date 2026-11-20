@@ -1,0 +1,72 @@
+services:
+  init:
+    image: php:8.3-cli-bookworm
+    volumes:
+      - secrets:/run/daily-pass
+      - ./docker/init.php:/init.php:ro
+    command: ["php", "/init.php"]
+  db:
+    image: mysql:8.0
+    depends_on:
+      init: {condition: service_completed_successfully}
+    environment:
+      MYSQL_DATABASE: daily_pass
+      MYSQL_USER: daily_pass
+      MYSQL_PASSWORD_FILE: /run/daily-pass/db_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/daily-pass/root_password
+    volumes:
+      - secrets:/run/daily-pass:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/daily-pass/db_password) mysql -h 127.0.0.1 -u daily_pass daily_pass -e 'SELECT 1' >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  platform-mock:
+    build: .
+    depends_on:
+      init: {condition: service_completed_successfully}
+    command: ["php", "-S", "0.0.0.0:8081", "platform-mock/router.php"]
+    environment:
+      SERVICE_URL: http://service:8080
+    volumes:
+      - secrets:/run/daily-pass:ro
+      - mock-data:/data
+    ports: ["127.0.0.1:8081:8081"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8081/health') === false ? 1 : 0);"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  service:
+    build: .
+    depends_on:
+      db: {condition: service_healthy}
+      platform-mock: {condition: service_healthy}
+    environment: &service-env
+      DB_DSN: mysql:host=db;dbname=daily_pass;charset=utf8mb4
+      DB_USER: daily_pass
+      PLATFORM_URL: http://platform-mock:8081
+      DAILY_FEE: ${DAILY_FEE:-5.00}
+      SOURCE_ADDRESS: DailyPass
+    volumes:
+      - secrets:/run/daily-pass:ro
+    ports: ["127.0.0.1:8080:8080"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/health') === false ? 1 : 0);"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  tests:
+    build: .
+    profiles: [test]
+    depends_on:
+      service: {condition: service_healthy}
+    environment: *service-env
+    volumes:
+      - secrets:/run/daily-pass:ro
+    command: ["vendor/bin/phpunit"]
+volumes:
+  secrets:
+  mysql-data:
+  mock-data:

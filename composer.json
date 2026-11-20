@@ -1,0 +1,10 @@
+{
+  "name": "daily-pass/carrier-billing",
+  "description": "A deliberately small carrier billing service and executable mock",
+  "type": "project",
+  "license": "proprietary",
+  "require": {"php": "^8.3", "ext-pdo": "*", "ext-curl": "*"},
+  "require-dev": {"phpunit/phpunit": "^11.5"},
+  "autoload": {"psr-4": {"DailyPass\\": "service/src/"}},
+  "scripts": {"test": "phpunit"}
+}
