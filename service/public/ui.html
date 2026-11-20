@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Pass — ручное тестирование</title>
+<style>
+:root { color-scheme: light dark; --bg:#f6f7f9; --fg:#1b1f24; --card:#fff; --bd:#d0d5dc; --mut:#5c6670; --ac:#1f6feb; --ok:#1a7f37; --err:#cf222e; }
+@media (prefers-color-scheme: dark) { :root { --bg:#12151a; --fg:#e6e9ee; --card:#1b2028; --bd:#343b46; --mut:#9aa4b0; --ac:#58a6ff; --ok:#3fb950; --err:#ff7b72; } }
+* { box-sizing: border-box; }
+body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; }
+h1 { font-size:20px; margin:0 0 12px; }
+h2 { font-size:15px; margin:0 0 8px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:12px; }
+.card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:12px; min-width:0; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+input, select, button { font:inherit; color:inherit; background:var(--card); border:1px solid var(--bd); border-radius:6px; padding:6px 10px; }
+input { flex:1; min-width:180px; }
+button { cursor:pointer; background:var(--ac); color:#fff; border-color:var(--ac); }
+button.sec { background:var(--card); color:var(--fg); border-color:var(--bd); }
+button:disabled { opacity:.5; cursor:wait; }
+.hint { color:var(--mut); font-size:12px; margin:0 0 8px; }
+.wrap { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; margin-bottom:8px; font-size:12px; }
+th, td { border:1px solid var(--bd); padding:3px 6px; text-align:left; white-space:nowrap; }
+th { color:var(--mut); font-weight:600; }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; border:1px solid var(--bd); font-weight:600; }
+.ok { color:var(--ok); } .err { color:var(--err); }
+#log { max-height:420px; overflow:auto; }
+.entry { border-top:1px solid var(--bd); padding:6px 0; }
+.entry pre { margin:2px 0; white-space:pre-wrap; word-break:break-all; font-size:12px; color:var(--mut); }
+.full { grid-column:1/-1; }
+</style>
+</head>
+<body>
+<h1>Daily Pass — ручное тестирование</h1>
+<div class="grid">
+
+<div class="card">
+  <h2>1. Абонент</h2>
+  <div class="row">
+    <input id="msisdn" aria-label="MSISDN" placeholder="tel:1000123456">
+    <button class="sec" id="rnd">Случайный</button>
+  </div>
+  <div class="row"><button id="optin">Подписаться (Opt-in)</button></div>
+  <p class="hint">POST /subscriptions. После подписки отправляется приветственное SMS.</p>
+</div>
+
+<div class="card">
+  <h2>2. Исход списания (мок оператора)</h2>
+  <div class="row">
+    <select id="outcome" aria-label="Исход">
+      <option value="S1000">S1000 — успех</option>
+      <option value="E1326">E1326 — недостаточно средств (повтор)</option>
+      <option value="E1308">E1308 — абонент приостановлен</option>
+      <option value="E1318">E1318 — временная ошибка (повтор)</option>
+      <option value="E1337">E1337 — дубликат / неизвестно</option>
+    </select>
+    <button class="sec" id="setoutcome">Применить</button>
+  </div>
+  <p class="hint">Выберите исход ДО запуска биллинга. Настройка действует для выбранного абонента.</p>
+  <h2>3. Биллинг</h2>
+  <div class="row"><button id="bill">Запустить биллинг</button></div>
+  <p class="hint">POST /jobs/bill. Обрабатывает всех абонентов; результат ниже.</p>
+  <div class="wrap" id="billres"></div>
+</div>
+
+<div class="card">
+  <h2>4. События от оператора</h2>
+  <div class="row">
+    <button class="sec" id="dup">REGISTERED дважды (дубликат)</button>
+    <button class="sec" id="stop">Отправить STOP</button>
+  </div>
+  <p class="hint">Мок вызывает вебхуки сервиса: /admin/notify и /admin/mo.</p>
+</div>
+
+<div class="card full">
+  <h2>5. Статус абонента</h2>
+  <div class="row"><button class="sec" id="refresh">Обновить статус и состояние мока</button></div>
+  <div id="status" class="wrap"></div>
+</div>
+
+<div class="card full">
+  <h2>6. Состояние мока</h2>
+  <div id="mock" class="wrap"></div>
+</div>
+
+<div class="card full">
+  <h2>7. Журнал сценария <button class="sec" id="clearlog">Очистить</button></h2>
+  <div id="log"></div>
+</div>
+
+</div>
+<script>
+const SVC = location.origin;
+const MOCK = location.protocol + '//' + location.hostname + ':8081';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const randomMsisdn = () => 'tel:1000' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
+$('msisdn').value = randomMsisdn();
+$('rnd').onclick = () => { $('msisdn').value = randomMsisdn(); };
+const sub = () => $('msisdn').value.trim();
+
+async function call(method, base, path, body) {
+  const url = base + path;
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  const t = new Date().toLocaleTimeString();
+  let status = 'ERR', data;
+  try {
+    const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    status = r.status;
+    const text = await r.text();
+    try { data = JSON.parse(text); } catch { data = text; }
+  } catch (e) { data = { error: String(e) }; }
+  const good = typeof status === 'number' && status < 400;
+  entry.innerHTML = `<b>${esc(t)}</b> ${esc(method)} ${esc(url)} <b class="${good ? 'ok' : 'err'}">${esc(status)}</b>` +
+    (body ? `<pre>→ ${esc(JSON.stringify(body))}</pre>` : '') + `<pre>← ${esc(JSON.stringify(data))}</pre>`;
+  $('log').prepend(entry);
+  return { status, data };
+}
+
+function table(rows) {
+  if (!rows || !rows.length) return '<p class="hint">нет записей</p>';
+  const cols = Object.keys(rows[0]);
+  return '<table><tr>' + cols.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>' +
+    rows.map(r => '<tr>' + cols.map(c => `<td>${esc(r[c])}</td>`).join('') + '</tr>').join('') + '</table>';
+}
+
+const STATE_RU = { ACTIVE: 'активна', INACTIVE: 'неактивна', PENDING: 'ожидает', SUSPENDED: 'приостановлена' };
+function renderStatus(d) {
+  const s = d.subscriber;
+  let h = '';
+  if (!s) h = '<p>Абонент не найден (ещё не подписывался).</p>';
+  else {
+    const st = s.status ?? s.state ?? '';
+    h = `<p>Состояние: <span class="badge">${esc(STATE_RU[st] ?? st)}</span> (${esc(st)})</p><h2>Данные подписки</h2>` + table([s]);
+  }
+  $('status').innerHTML = h + `<h2>Платежи</h2>${table(d.payments)}<h2>Попытки списания</h2>${table(d.attempts)}<h2>SMS (очередь сервиса)</h2>${table(d.sms)}`;
+}
+
+async function refreshStatus() {
+  const r = await call('GET', SVC, '/subscribers/status?subscriberId=' + encodeURIComponent(sub()));
+  if (r.status === 200) renderStatus(r.data); else $('status').innerHTML = `<p class="err">${esc(JSON.stringify(r.data))}</p>`;
+}
+async function refreshMock() {
+  const r = await call('GET', MOCK, '/admin/state');
+  if (r.status !== 200) { $('mock').innerHTML = `<p class="err">${esc(JSON.stringify(r.data))}</p>`; return; }
+  const m = r.data, id = sub();
+  const debits = (m.debits || []).filter(x => x.subscriber === id);
+  const sms = (m.sms || []).filter(x => x.destination === id);
+  const cfg = (m.config || []).filter(x => x.subscriber === id);
+  $('mock').innerHTML = `<p>Списаний у мока для ${esc(id)}: <span class="badge">${debits.length}</span></p>${table(debits)}` +
+    `<h2>Настройка исхода</h2>${table(cfg)}<h2>SMS, полученные оператором</h2>${table(sms)}`;
+}
+const refreshAll = async () => { await refreshStatus(); await refreshMock(); };
+
+function wrap(id, fn) {
+  $(id).onclick = async () => {
+    const b = $(id); b.disabled = true;
+    try { await fn(); } finally { b.disabled = false; }
+  };
+}
+
+wrap('optin', async () => { await call('POST', SVC, '/subscriptions', { subscriberId: sub() }); await refreshAll(); });
+wrap('setoutcome', async () => { await call('POST', MOCK, '/admin/config', { subscriberId: sub(), statusCode: $('outcome').value }); await refreshMock(); });
+wrap('bill', async () => {
+  const r = await call('POST', SVC, '/jobs/bill', {});
+  const res = r.data && r.data.results;
+  if (Array.isArray(res)) {
+    $('billres').innerHTML = res.length ? table(res.map(x => (typeof x === 'object' && x !== null) ? x : { result: x })) : '<p class="hint">нет подходящих абонентов</p>';
+  } else if (res && typeof res === 'object') {
+    $('billres').innerHTML = table(Object.entries(res).map(([k, v]) => ({ subscriber: k, result: typeof v === 'object' ? JSON.stringify(v) : v })));
+  } else $('billres').innerHTML = `<p class="err">${esc(JSON.stringify(r.data))}</p>`;
+  await refreshAll();
+});
+wrap('dup', async () => {
+  const body = { subscriberId: sub(), status: 'REGISTERED', timeStamp: new Date().toISOString().replace(/\.\d+Z$/, 'Z') };
+  await call('POST', MOCK, '/admin/notify', body);
+  await call('POST', MOCK, '/admin/notify', body);
+  await refreshAll();
+});
+wrap('stop', async () => { await call('POST', MOCK, '/admin/mo', { subscriberId: sub(), message: 'STOP' }); await refreshAll(); });
+wrap('refresh', refreshAll);
+$('clearlog').onclick = () => { $('log').innerHTML = ''; };
+</script>
+</body>
+</html>

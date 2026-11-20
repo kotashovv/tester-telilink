@@ -12,6 +12,7 @@ docker compose up
 
 Compose builds the PHP image, installs the locked Composer dependencies, generates local credentials into a Docker volume, waits for MySQL and the mock, and runs schema migrations before serving requests. No `.env`, Composer, PHP, database setup, or manual migration is required on the host. After code changes use `docker compose up --build`.
 
+- Manual-testing UI: open `http://localhost:8080/`.
 - Service: `http://localhost:8080/health`
 - Mock: `http://localhost:8081/health`
 - Both host ports bind to loopback. These unauthenticated demo/admin endpoints are for a trusted local machine.

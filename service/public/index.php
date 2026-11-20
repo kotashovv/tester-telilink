@@ -5,12 +5,21 @@ use DailyPass\{App, Config, Validation};
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
 try {
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $method = $_SERVER['REQUEST_METHOD'];
     $app = new App();
     if ($method === 'GET' && $path === '/') {
-        $result = ['name' => 'Daily Pass service', 'try' => ['POST /subscriptions', 'POST /jobs/bill', 'GET /subscribers/status?subscriberId=tel%3A1000000001', 'GET /health']];
+        header('Content-Type: text/html; charset=utf-8');
+        readfile(__DIR__ . '/ui.html');
+        exit;
     } elseif ($method === 'GET' && $path === '/health') {
         $app->store->query('SELECT 1');
         $result = ['ok' => true];

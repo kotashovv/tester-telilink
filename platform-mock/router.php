@@ -5,6 +5,13 @@ use DailyPass\{Config, Validation};
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
 $db = new PDO('sqlite:' . (getenv('MOCK_DB') ?: '/data/platform.sqlite'), null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 $db->exec('PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL;');
 $db->exec('CREATE TABLE IF NOT EXISTS config (subscriber TEXT PRIMARY KEY, codes TEXT NOT NULL, delay_ms INTEGER NOT NULL DEFAULT 0, lose_response INTEGER NOT NULL DEFAULT 0);
